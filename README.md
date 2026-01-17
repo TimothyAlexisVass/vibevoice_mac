@@ -1,46 +1,36 @@
-# VibeVoice4macOS — VibeVoice on Apple Silicon (macOS)
+# VibeVoice on macOS specialized for Apple Silicon (MPS)
 
-This fork adds a **one-file, self-contained setup & runner** for the full VibeVoice-Large [VibeVoice](https://github.com/WhoPaidItAll/VibeVoice) so you can launch the Gradio demo or do simple CLI inference **locally on macOS Apple Silicon**—no CUDA, no sudo, no global installs.
+This fork adds a **one-file, self-contained setup & runner** for VibeVoice.
+You can launch the Gradio demo or do simple CLI inference **locally on macOS Apple Silicon**.
+No CUDA sudo or global install required!
 
 > ✅ Apple Silicon (arm64) + Python ≥ 3.10
-
-> ✅ Everything lives inside this repo (no external runtime folder)
-
 > ✅ Uses PyTorch **MPS** when available (otherwise CPU)
-
-> ✅ Resumes & verifies large sharded model downloads
-
-> ✅ Optional Hugging Face token auto-loaded from `./.env` or `./.hf_token`
-
----
-<img width="1517" height="932" alt="image" src="https://github.com/user-attachments/assets/3e4aa10e-8b36-4eb4-b72c-f761ab0fbfd7" />
 
 ---
 
 ## What’s included in this fork
 
-* `vibevoice_mac_arm64.sh` — the all-in-one installer/runner for macOS:
+* `setup.sh` — the all-in-one installer/runner for macOS:
 
   * Creates a local venv
   * Clones the upstream repo
-  * Downloads the chosen model with resume & shard verification
   * Provides a portable `ffmpeg` if needed (or `--allow-brew`)
   * Runs the **official** Gradio demo via a bootstrap that:
-
     * forces **SDPA** attention (avoids FlashAttention)
-    * **never** dispatches to CUDA
     * prefers **MPS** on Apple GPUs
+    * **never** dispatches to CUDA
 
 > Upstream model code, demos, and assets remain under their original directories; this script only orchestrates a Mac-friendly setup.
 
 ---
 
-## Requirements
+## System requirements
 
 * macOS on **Apple Silicon** (`arm64`)
 * **Python 3.10+** available as `python3`
 * Internet for first run (pip, git, model download)
-* Several GB of free disk (models can be large)
+* GB of free disk for the VibeVoice models
 
 ---
 
