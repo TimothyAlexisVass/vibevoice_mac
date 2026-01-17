@@ -8,7 +8,7 @@ set -Eeuo pipefail
 # - Creates ~/vibevoice_mac + local Python venv + local caches
 # - No sudo / no global installs (unless --allow-brew for ffmpeg)
 # - Idempotent; safe to re-run; offline-friendly reuse
-# - Supports HF auth via HF_TOKEN; downloads models locally
+# - Uses an existing local model directory (no HF downloads)
 # - Provides --demo (Gradio) and --infer (CLI-ish) paths
 # - Forces all Hugging Face caches into ./_cache
 # - Avoids CUDA/FlashAttention; uses PyTorch MPS if available
@@ -16,12 +16,11 @@ set -Eeuo pipefail
 # Usage examples:
 #   bash setup_vibevoice_mac.sh --demo
 #   bash setup_vibevoice_mac.sh --infer
-#   bash setup_vibevoice_mac.sh --model microsoft/VibeVoice-1.5B --demo --share
+#   bash setup_vibevoice_mac.sh --model-path "$HOME/vibevoice_mac/models/VibeVoice-7B" --demo --share
 #   bash setup_vibevoice_mac.sh --clean --force
-#   HF_TOKEN=hf_xxx bash setup_vibevoice_mac.sh --demo
 #
 # Flags:
-#   --model <hf_repo>     Model repo on Hugging Face (default: WestZhang/VibeVoice-Large-pt)
+#   --model-path <path>   Local model directory (default: ~/vibevoice_mac/models/VibeVoice-7B)
 #   --demo                Launch Gradio demo on port 7860
 #   --share               Add --share to Gradio (optional)
 #   --infer               Run a simple CLI inference example from text file
@@ -75,8 +74,8 @@ FFMPEG_DIR="${TOOLS_DIR}/ffmpeg"
 OUTPUTS_DIR="${PROJECT_DIR}/outputs"
 TMP_DIR="${PROJECT_DIR}/_tmp"
 
-MODEL_ID_DEFAULT="aoi-ot/VibeVoice-Large"
-MODEL_ID="$MODEL_ID_DEFAULT"
+MODEL_PATH_DEFAULT="${MODELS_DIR}/VibeVoice-7B"
+MODEL_PATH="${MODEL_PATH_DEFAULT}"
 
 DO_DEMO=0
 DO_SHARE=0
@@ -94,7 +93,8 @@ usage() {
 ### Parse flags
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --model) shift; MODEL_ID="${1:-}"; [[ -z "${MODEL_ID}" ]] && { error "--model requires a value"; exit 2; } ;;
+    --model-path) shift; MODEL_PATH="${1:-}"; [[ -z "${MODEL_PATH}" ]] && { error "--model-path requires a value"; exit 2; } ;;
+    --model) shift; MODEL_PATH="${1:-}"; [[ -z "${MODEL_PATH}" ]] && { error "--model requires a value"; exit 2; } ;;
     --demo) DO_DEMO=1 ;;
     --share) DO_SHARE=1 ;;
     --infer) DO_INFER=1 ;;
@@ -156,9 +156,6 @@ info "Using Python ${PY_VER_STR} (system)."
 mkdir -p "${PROJECT_DIR}" "${CACHE_DIR}" "${MODELS_DIR}" "${TOOLS_DIR}" "${FFMPEG_DIR}" "${OUTPUTS_DIR}" "${TMP_DIR}"
 
 ### Constrain all caches/logs to project dir (privacy & isolation)
-export HF_HOME="${CACHE_DIR}/huggingface"
-export HF_HUB_CACHE="${HF_HOME}/hub"
-export HUGGINGFACE_HUB_CACHE="${HF_HUB_CACHE}"
 export TRANSFORMERS_CACHE="${CACHE_DIR}/transformers"
 export TORCH_HOME="${CACHE_DIR}/torch"
 export XDG_CACHE_HOME="${CACHE_DIR}/xdg"
@@ -166,6 +163,7 @@ export MPLCONFIGDIR="${CACHE_DIR}/matplotlib"
 export NUMBA_CACHE_DIR="${CACHE_DIR}/numba"
 export PIP_CACHE_DIR="${CACHE_DIR}/pip"
 export TMPDIR="${TMP_DIR}"
+export VIBEVOICE_OUTPUTS="${OUTPUTS_DIR}"
 export HF_HUB_DISABLE_TELEMETRY=1
 export PYTHONNOUSERSITE=1
 # Avoid CUDA/FlashAttention assumptions; force safe attention math
@@ -307,119 +305,107 @@ else
   warn "Repo seems incomplete (no pyproject.toml/setup.py). Continuing anyway."
 fi
 
-# ---- Optional: auto-load HF token from file(s) ----
-# Priority: existing env > PROJECT_DIR/.env > PROJECT_DIR/.hf_token
-if [[ -z "${HF_TOKEN:-}" ]]; then
-  if [[ -f "${PROJECT_DIR}/.env" ]]; then
-    # Load KEY=VALUE lines, including HF_TOKEN=hf_xxx
-    set -a
-    # shellcheck disable=SC1091
-    source "${PROJECT_DIR}/.env"
-    set +a
-  elif [[ -f "${PROJECT_DIR}/.hf_token" ]]; then
-    # Plain file containing only the token string
-    HF_TOKEN="$(<"${PROJECT_DIR}/.hf_token")"
-    # Trim CR/LF just in case
-    HF_TOKEN="${HF_TOKEN%%[$'\r\n']}"
-    export HF_TOKEN
-  fi
-fi
-# ---- end HF token auto-load ----
+### Resolve local model directory (no network / no HF)
+resolve_model_path() {
+  local input="$1"
+  local resolved=""
+  local status=0
 
+  if resolved="$(MODEL_PATH_IN="$input" MODELS_DIR="${MODELS_DIR}" python - <<'PY'
+import os, sys
 
-### Hugging Face auth (optional, stored under HF_HOME)
-# Optional HF auth (uses env var if present)
-if [[ -n "${HF_TOKEN:-}" ]]; then
-  info "Authenticating to Hugging Face with HF_TOKEN (stored under ${HF_HOME}) ..." >&2
-  huggingface-cli logout >/dev/null 2>&1 || true
-  # Non-interactive login; adds token to git credential helper too
-  if ! huggingface-cli login --token "${HF_TOKEN}" --add-to-git-credential --non-interactive; then
-    warn "HF CLI login failed; will still try download with token if the command supports it." >&2
-  fi
-else
-  info "HF_TOKEN not provided; proceeding with public model access only." >&2
-fi
+base = os.environ.get("MODEL_PATH_IN", "")
+models_dir = os.environ.get("MODELS_DIR", "")
 
-### Model download helper
-download_model() {
-  local model_id="$1"
-  local local_dir="${MODELS_DIR}/${model_id//\//__}"
-  mkdir -p "${local_dir}"
+def has_any_files(d):
+    try:
+        return any(os.scandir(d))
+    except OSError:
+        return False
 
-  if [[ -n "$(ls -A "${local_dir}" 2>/dev/null || true)" ]]; then
-    info "Reusing existing model files at ${local_dir}" >&2
+def has_large_safetensors(d, min_bytes=10 * 1024 * 1024):
+    if not os.path.isdir(d):
+        return False
+    for name in os.listdir(d):
+        if name.endswith(".safetensors"):
+            p = os.path.join(d, name)
+            try:
+                if os.path.getsize(p) > min_bytes:
+                    return True
+            except OSError:
+                pass
+    return False
+
+def find_valid(root, max_depth=3):
+    root = os.path.realpath(root)
+    for curr, dirs, _files in os.walk(root):
+        depth = curr[len(root):].count(os.sep)
+        if depth > max_depth:
+            dirs[:] = []
+            continue
+        if has_large_safetensors(curr):
+            return os.path.realpath(curr)
+    return None
+
+if not os.path.isdir(base):
+    sys.exit(2)
+if not has_any_files(base):
+    sys.exit(3)
+if has_large_safetensors(base):
+    print(os.path.realpath(base))
+    sys.exit(0)
+
+found = find_valid(base, 3)
+if not found and models_dir and os.path.isdir(models_dir):
+    found = find_valid(models_dir, 3)
+
+if found:
+    print(found)
+    sys.exit(0)
+
+sys.exit(4)
+PY
+)"; then
+    status=0
   else
-    info "Downloading model ${model_id} into ${local_dir} (cached locally; resume enabled) ..." >&2
-    if command -v hf >/dev/null 2>&1; then
-      hf download "${model_id}" --repo-type model --local-dir "${local_dir}" --resume >&2 || return 1
-    else
-      huggingface-cli download "${model_id}" --local-dir "${local_dir}" --local-dir-use-symlinks False >&2 || return 1
-    fi
+    status=$?
   fi
 
-  # Verify shards if there's an index; do NOT depend on argv – use env instead
-  VV_LOCAL_DIR="${local_dir}" python - <<'PY' >&2
-import os, json, sys
-d=os.environ.get("VV_LOCAL_DIR","")
-idx=os.path.join(d,"model.safetensors.index.json")
-if os.path.isfile(idx):
-    with open(idx, "r") as f:
-        j=json.load(f)
-    needed=set(j.get("weight_map",{}).values())
-    missing=[f for f in sorted(needed) if not os.path.isfile(os.path.join(d,f))]
-    if missing:
-        print("[verify] missing files:", *missing, sep="\n", file=sys.stderr)
-        sys.exit(2)
-PY
-  if [[ $? -ne 0 ]]; then
-    # Try one more resume to fetch missing pieces
-    if command -v hf >/dev/null 2>&1; then
-      hf download "${model_id}" --repo-type model --local-dir "${local_dir}" --resume >&2 || true
-    else
-      huggingface-cli download "${model_id}" --local-dir "${local_dir}" --local-dir-use-symlinks False >&2 || true
-    fi
-    # Re-check
-    VV_LOCAL_DIR="${local_dir}" python - <<'PY' >&2
-import os, json, sys
-d=os.environ.get("VV_LOCAL_DIR","")
-idx=os.path.join(d,"model.safetensors.index.json")
-if os.path.isfile(idx):
-    with open(idx, "r") as f:
-        j=json.load(f)
-    needed=set(j.get("weight_map",{}).values())
-    missing=[f for f in sorted(needed) if not os.path.isfile(os.path.join(d,f))]
-    if missing:
-        print("[verify] still missing:", *missing, sep="\n", file=sys.stderr)
-        sys.exit(2)
-PY
-    [[ $? -ne 0 ]] && return 1
-  fi
-
-  # Success: print the path on stdout (captured by the caller)
-  echo "${local_dir}"
-  return 0
+  case "${status}" in
+    0)
+      if [[ -z "${resolved}" ]]; then
+        error "Model path resolution failed for: ${input}"
+        exit 1
+      fi
+      if [[ "${resolved}" != "${input}" ]]; then
+        warn "Model path looked incomplete; using detected model dir: ${resolved}"
+      fi
+      MODEL_PATH="${resolved}"
+      ;;
+    2)
+      error "Local model path not found: ${input}"
+      warn "Place your model files there or pass --model-path /path/to/model"
+      exit 1
+      ;;
+    3)
+      error "Local model path is empty: ${input}"
+      warn "Ensure the model files are fully downloaded."
+      exit 1
+      ;;
+    4)
+      error "Local model path has no real .safetensors weights (likely Git LFS pointers): ${input}"
+      warn "Point --model-path at the folder that contains the large model shards."
+      exit 1
+      ;;
+    *)
+      error "Model path resolution failed for: ${input}"
+      exit 1
+      ;;
+  esac
 }
 
-
-
-### Resolve & fetch model with graceful fallback
-FINAL_MODEL_ID="${MODEL_ID}"
-MODEL_PATH=""
-if ! MODEL_PATH="$(download_model "${FINAL_MODEL_ID}")"; then
-  warn "Model '${FINAL_MODEL_ID}' download failed or gated."
-  if [[ "${FINAL_MODEL_ID}" != "${MODEL_ID_DEFAULT}" ]]; then
-    warn "Falling back to default model: ${MODEL_ID_DEFAULT}"
-    FINAL_MODEL_ID="${MODEL_ID_DEFAULT}"
-    if ! MODEL_PATH="$(download_model "${FINAL_MODEL_ID}")"; then
-      error "Default model download failed as well. Check your network/token and retry."
-      exit 1
-    fi
-  else
-    error "Model download failed. Provide HF_TOKEN if the model is gated, or choose a different model via --model."
-    exit 1
-  fi
-fi
-success "Model ready at: ${MODEL_PATH} (source: ${FINAL_MODEL_ID})"
+resolve_model_path "${MODEL_PATH}"
+success "Using local model at: ${MODEL_PATH}"
 
 # --- VibeVoice mac bootstrap (auto-patches at runtime) ---
 vv_write_bootstrap() {
@@ -471,8 +457,10 @@ try:
             kwargs['device_map'] = target_dev
 
         # MPS is more stable with float16 than bf16
-        if want_mps and kwargs.get('torch_dtype') is None:
-            kwargs['torch_dtype'] = torch.float16
+        if want_mps:
+            td = kwargs.get('torch_dtype')
+            if td is None or td == torch.bfloat16:
+                kwargs['torch_dtype'] = torch.float16
 
         return _orig.__func__(cls, path, *args, **kwargs)
 
@@ -509,18 +497,20 @@ run_gradio_demo() {
     error "Gradio demo script not found at ${demo_script}. The repo layout may have changed."
     exit 1
   fi
-  local extra=()
-  if [[ "${DO_SHARE}" -eq 1 ]]; then extra+=(--share); fi
+  local -a cmd
+  cmd=(
+    python .vv_bootstrap.py
+    --model_path "${MODEL_PATH}"
+    --port "${PORT}"
+    --device "$(python -c 'import torch; print("mps" if torch.backends.mps.is_available() else "cpu")')"
+  )
+  if [[ "${DO_SHARE}" -eq 1 ]]; then cmd+=(--share); fi
   # Use the local model files to avoid network; launch through our bootstrap
   (
     cd "${PROJECT_DIR}" && \
     vv_write_bootstrap; \
     ACCELERATE_DISABLE_CUDA=1 CUDA_VISIBLE_DEVICES="" PYTORCH_ENABLE_MPS_FALLBACK=1 \
-      exec python .vv_bootstrap.py \
-        --model_path "${MODEL_PATH}" \
-        --port "${PORT}" \
-        --device "$(python -c 'import torch; print("mps" if torch.backends.mps.is_available() else "cpu")')" \
-        "${extra[@]}"
+      exec "${cmd[@]}"
   ) || {
     error "Gradio demo exited unexpectedly."
     exit 1
@@ -628,8 +618,8 @@ PY
 }
 
 ### Final tips (performance)
-warn "If inference is slow on MPS/CPU, try a smaller model via:
-  --model microsoft/VibeVoice-1.5B
+warn "If inference is slow on MPS/CPU, try a smaller local model via:
+  --model-path /path/to/smaller/model
 and/or split long text into shorter chunks."
 
 ### Execute requested action
@@ -651,7 +641,6 @@ else
 ${BOLD}Setup complete.${RESET}
 Project dir: ${PROJECT_DIR}
 Repo:        ${REPO_DIR}
-Model:       ${FINAL_MODEL_ID}
 Model path:  ${MODEL_PATH}
 Venv:        ${VENV_DIR}
 ffmpeg:      $(command -v ffmpeg || echo "${FFMPEG_DIR}/ffmpeg")
@@ -664,6 +653,3 @@ Next steps:
 
 EOF
 fi
-
-
-
