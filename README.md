@@ -4,13 +4,13 @@ This fork adds a **one-file, self-contained setup & runner** for the full VibeVo
 
 > ✅ Apple Silicon (arm64) + Python ≥ 3.10
 
-> ✅ Everything sandboxed under `~/vibevoice_mac`
+> ✅ Everything lives inside this repo (no external runtime folder)
 
 > ✅ Uses PyTorch **MPS** when available (otherwise CPU)
 
 > ✅ Resumes & verifies large sharded model downloads
 
-> ✅ Optional Hugging Face token auto-loaded from `~/vibevoice_mac/.env` or `.hf_token`
+> ✅ Optional Hugging Face token auto-loaded from `./.env` or `./.hf_token`
 
 ---
 <img width="1517" height="932" alt="image" src="https://github.com/user-attachments/assets/3e4aa10e-8b36-4eb4-b72c-f761ab0fbfd7" />
@@ -55,8 +55,7 @@ cd vi-voice4mac
 chmod +x vibevoice_mac_arm64.sh
 
 # 3) (Recommended) Add your Hugging Face token once
-mkdir -p ~/vibevoice_mac
-printf 'HF_TOKEN=hf_your_token_here\n' > ~/vibevoice_mac/.env
+printf 'HF_TOKEN=hf_your_token_here\n' > ./.env
 
 # 4) Run the Gradio demo (default model; local UI on port 7860)
 bash vibevoice_mac_arm64.sh --demo
@@ -75,15 +74,14 @@ bash vibevoice_mac_arm64.sh --model microsoft/VibeVoice-1.5B --demo
 The script automatically picks a token from:
 
 1. Existing env (`HF_TOKEN`)
-2. `~/vibevoice_mac/.env` (e.g. `HF_TOKEN=hf_xxx`)
-3. `~/vibevoice_mac/.hf_token` (file containing only the token string)
+2. `./.env` (e.g. `HF_TOKEN=hf_xxx`)
+3. `./.hf_token` (file containing only the token string)
 
 Examples:
 
 ```bash
 # One-time setup (preferred)
-mkdir -p ~/vibevoice_mac
-cat > ~/vibevoice_mac/.env <<'EOF'
+cat > ./.env <<'EOF'
 HF_TOKEN=hf_your_token_here
 EOF
 
@@ -91,7 +89,7 @@ EOF
 HF_TOKEN=hf_your_token_here bash vibevoice_mac_arm64.sh --demo
 ```
 
-> **Never commit your token.** It lives outside the repo by default.
+> **Never commit your token.** It lives in `./.env` (gitignored by default).
 
 ---
 
@@ -114,7 +112,7 @@ bash vibevoice_mac_arm64.sh --model microsoft/VibeVoice-1.5B --demo
 
 ```bash
 bash vibevoice_mac_arm64.sh --infer
-# Output: ~/vibevoice_mac/outputs/sample_out.wav
+# Output: ./outputs/sample_out.wav
 ```
 
 ### Clean everything
@@ -149,7 +147,7 @@ bash vibevoice_mac_arm64.sh --allow-brew --demo
 
 ## What the script does (under the hood)
 
-* Creates **`~/vibevoice_mac`** with:
+* Uses the project directory and creates:
 
   * `.venv/` (local Python virtualenv)
   * `_cache/` (HF/Torch/Transformers caches)
@@ -299,13 +297,13 @@ Callable that restricts allowed tokens by prefix. Set via `model.generate(..., p
 _Model config and inference settings_
 
 ### ddpm_num_inference_steps
-Number of diffusion steps at inference time. Set at runtime with `model.set_ddpm_inference_steps(n)` or by editing `~/vibevoice_mac/models/VibeVoice-7B/config.json` before load.
+Number of diffusion steps at inference time. Set at runtime with `model.set_ddpm_inference_steps(n)` or by editing `./models/VibeVoice-7B/config.json` before load.
 
 ### ddpm_batch_mul
 Diffusion micro-batch multiplier. Set at runtime with `model.model.diffusion_head.config.ddpm_batch_mul = n`.
 
 ### ddpm_beta_schedule
-Schedule type for diffusion (for example, `cosine`). Config-only in `~/vibevoice_mac/models/VibeVoice-7B/config.json`; changing it without retraining is not supported.
+Schedule type for diffusion (for example, `cosine`). Config-only in `./models/VibeVoice-7B/config.json`; changing it without retraining is not supported.
 
 ### ddpm_num_steps
 Total training diffusion steps. Config-only; changing it without retraining is not supported.
@@ -358,7 +356,7 @@ Framework for tensors (for example, `pt`). Set with `processor(..., return_tenso
 ### return_attention_mask
 Include attention masks. Set with `processor(..., return_attention_mask=True)`.
 
-_Config-only processor settings (from `~/vibevoice_mac/models/VibeVoice-7B/preprocessor_config.json`)_
+_Config-only processor settings (from `./models/VibeVoice-7B/preprocessor_config.json`)_
 
 ### speech_tok_compress_ratio
 Tokenizer compression ratio used in speech processing. Config-only.
@@ -431,8 +429,14 @@ This project is intended for research & experimentation.
 ```
 .
 ├─ vibevoice_mac_arm64.sh    # ← this script (macOS setup & runner)
+├─ generate.py               # optional local generator wrapper
 ├─ VibeVoice/                # upstream repo code (cloned by the script at runtime)
+├─ .venv/                    # local venv (created by the script)
+├─ _cache/                   # HF/Torch/Transformers caches
+├─ models/                   # local model files
+├─ outputs/                  # generated audio
+├─ tools/                    # bundled tools (ffmpeg)
 └─ README.md                 # this file
 ```
 
-> The runtime sandbox (`~/vibevoice_mac/`) is created on first run and contains your venv, caches, models, token files, etc. It’s outside the repo so you don’t accidentally commit huge files or secrets.
+> Runtime folders live inside this repo; keep them gitignored to avoid committing large files or secrets.

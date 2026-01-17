@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # VibeVoice macOS Apple Silicon setup & runner (fully-contained)
 #==============================================================
 # Requirements met:
-# - Creates ~/vibevoice_mac + local Python venv + local caches
+# - Creates local project folders (./.venv, ./_cache, ./models, ./VibeVoice, ./outputs)
 # - No sudo / no global installs (unless --allow-brew for ffmpeg)
 # - Idempotent; safe to re-run; offline-friendly reuse
 # - Uses an existing local model directory (no HF downloads)
@@ -16,11 +16,11 @@ set -Eeuo pipefail
 # Usage examples:
 #   bash setup_vibevoice_mac.sh --demo
 #   bash setup_vibevoice_mac.sh --infer
-#   bash setup_vibevoice_mac.sh --model-path "$HOME/vibevoice_mac/models/VibeVoice-7B" --demo --share
+#   bash setup_vibevoice_mac.sh --model-path ./models/VibeVoice-7B --demo --share
 #   bash setup_vibevoice_mac.sh --clean --force
 #
 # Flags:
-#   --model-path <path>   Local model directory (default: ~/vibevoice_mac/models/VibeVoice-7B)
+#   --model-path <path>   Local model directory (default: ./models/VibeVoice-7B)
 #   --demo                Launch Gradio demo on port 7860
 #   --share               Add --share to Gradio (optional)
 #   --infer               Run a simple CLI inference example from text file
@@ -32,7 +32,7 @@ set -Eeuo pipefail
 # Notes:
 # - Tested targets: macOS (Darwin) + arm64 (Apple Silicon) only; exits otherwise
 # - Python: requires >= 3.10 (uses system python3); will not install Python
-# - All data stays under ~/vibevoice_mac
+# - All data stays under the project directory (this repo)
 #==============================================================
 
 ### Pretty logging
@@ -63,7 +63,7 @@ on_error() {
 trap on_error ERR
 
 ### Defaults & globals
-PROJECT_DIR="${HOME}/vibevoice_mac"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_URL="https://github.com/WhoPaidItAll/VibeVoice"
 REPO_DIR="${PROJECT_DIR}/VibeVoice"
 VENV_DIR="${PROJECT_DIR}/.venv"
@@ -110,18 +110,35 @@ done
 ### Clean mode
 if [[ "$DO_CLEAN" -eq 1 ]]; then
   if [[ "$FORCE" -eq 0 ]]; then
-    read -r -p "This will permanently delete ONLY contents under ${PROJECT_DIR}. Proceed? [y/N] " ans
+    read -r -p "This will permanently delete runtime data under ${PROJECT_DIR} (venv, caches, models, outputs, tools, and the VibeVoice checkout). Proceed? [y/N] " ans
     case "${ans:-N}" in
       y|Y|yes|YES) : ;;
       *) info "Aborted."; exit 0 ;;
     esac
   fi
-  if [[ -d "$PROJECT_DIR" ]]; then
-    info "Removing $PROJECT_DIR ..."
-    rm -rf "${PROJECT_DIR}"
-    success "Cleaned."
+  to_remove=(
+    "${VENV_DIR}"
+    "${CACHE_DIR}"
+    "${MODELS_DIR}"
+    "${TOOLS_DIR}"
+    "${OUTPUTS_DIR}"
+    "${TMP_DIR}"
+    "${REPO_DIR}"
+    "${PROJECT_DIR}/.vv_bootstrap.py"
+    "${PROJECT_DIR}/demo_text.txt"
+  )
+  removed_any=0
+  for p in "${to_remove[@]}"; do
+    if [[ -e "$p" ]]; then
+      info "Removing $p ..."
+      rm -rf "$p"
+      removed_any=1
+    fi
+  done
+  if [[ "$removed_any" -eq 1 ]]; then
+    success "Cleaned runtime directories."
   else
-    info "Nothing to clean; ${PROJECT_DIR} does not exist."
+    info "Nothing to clean; no runtime directories found."
   fi
   exit 0
 fi

@@ -175,3 +175,11 @@ tags
 /checkpoints/
 exp
 .gradio/
+/.venv/
+/_cache/
+/_tmp/
+/models/
+/tools/
+/.vv_bootstrap.py
+/demo_text.txt
+/.hf_token
