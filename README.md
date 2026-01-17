@@ -47,12 +47,14 @@ This fork adds a **one-file, self-contained setup & runner** for the full VibeVo
 ## Quick start
 
 ```bash
-# 1) Clone your fork (this repo)
-git clone https://github.com/<your-username>/vi-voice4mac.git
-cd vi-voice4mac
+# 0) Fork this repo
 
-# 2) Make the script executable
-chmod +x vibevoice_mac_arm64.sh
+# 1) Clone your fork (this repo)
+git clone https://github.com/<your-username>/vibevoice_mac.git
+cd vibevoice_mac
+
+# 2) Make the setup script executable
+chmod +x setup.sh
 
 # 3) (Recommended) Add your Hugging Face token once
 printf 'HF_TOKEN=hf_your_token_here\n' > ./.env
