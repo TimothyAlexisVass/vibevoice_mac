@@ -4,7 +4,7 @@ import subprocess
 ROOT = os.path.dirname(os.path.abspath(__file__))
 MODEL = os.path.join(ROOT, "models", "VibeVoice-7B")
 VENV_PY = os.path.join(ROOT, ".venv", "bin", "python")
-INFER = os.path.join(ROOT, "VibeVoice", "demo", "inference_from_file.py")
+INFER = os.path.join(ROOT, "demo", "inference_from_file.py")
 OUTDIR = os.path.join(ROOT, "outputs")
 TMPDIR = "/tmp/vibevoice_chunks"
 VOICE = "MariaMolina"

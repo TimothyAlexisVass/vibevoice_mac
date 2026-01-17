@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # VibeVoice macOS Apple Silicon setup & runner (fully-contained)
 #==============================================================
 # Requirements met:
-# - Creates local project folders (./.venv, ./_cache, ./models, ./VibeVoice, ./outputs)
+# - Creates local project folders (./.venv, ./_cache, ./models, ./outputs)
 # - No sudo / no global installs (unless --allow-brew for ffmpeg)
 # - Idempotent; safe to re-run; offline-friendly reuse
 # - Uses an existing local model directory (no HF downloads)
@@ -25,14 +25,14 @@ set -Eeuo pipefail
 #   --share               Add --share to Gradio (optional)
 #   --infer               Run a simple CLI inference example from text file
 #   --allow-brew          If ffmpeg missing, permit Homebrew install (no sudo)
-#   --clean               Remove venv, caches, repo, models, outputs (prompt unless --force)
+#   --clean               Remove venv, caches, models, outputs (prompt unless --force)
 #   --force               Use with --clean to skip prompt
 #   -h | --help           Show this help
 #
 # Notes:
 # - Tested targets: macOS (Darwin) + arm64 (Apple Silicon) only; exits otherwise
 # - Python: requires >= 3.10 (uses system python3); will not install Python
-# - All data stays under the project directory (this repo)
+# - All data stays under the project directory
 #==============================================================
 
 ### Pretty logging
@@ -64,8 +64,6 @@ trap on_error ERR
 
 ### Defaults & globals
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_URL="https://github.com/WhoPaidItAll/VibeVoice"
-REPO_DIR="${PROJECT_DIR}/VibeVoice"
 VENV_DIR="${PROJECT_DIR}/.venv"
 CACHE_DIR="${PROJECT_DIR}/_cache"
 MODELS_DIR="${PROJECT_DIR}/models"
@@ -110,7 +108,7 @@ done
 ### Clean mode
 if [[ "$DO_CLEAN" -eq 1 ]]; then
   if [[ "$FORCE" -eq 0 ]]; then
-    read -r -p "This will permanently delete runtime data under ${PROJECT_DIR} (venv, caches, models, outputs, tools, and the VibeVoice checkout). Proceed? [y/N] " ans
+    read -r -p "This will permanently delete runtime data under ${PROJECT_DIR} (venv, caches, models, outputs, tools). Proceed? [y/N] " ans
     case "${ans:-N}" in
       y|Y|yes|YES) : ;;
       *) info "Aborted."; exit 0 ;;
@@ -123,7 +121,6 @@ if [[ "$DO_CLEAN" -eq 1 ]]; then
     "${TOOLS_DIR}"
     "${OUTPUTS_DIR}"
     "${TMP_DIR}"
-    "${REPO_DIR}"
     "${PROJECT_DIR}/.vv_bootstrap.py"
     "${PROJECT_DIR}/demo_text.txt"
   )
@@ -300,26 +297,12 @@ else
 fi
 export PATH="${FFMPEG_DIR}:$PATH"
 
-### Clone or update VibeVoice repo (safe offline)
-if [[ ! -d "${REPO_DIR}/.git" ]]; then
-  info "Cloning VibeVoice repository into ${REPO_DIR} ..."
-  if ! git clone --depth 1 "${REPO_URL}" "${REPO_DIR}"; then
-    warn "Clone failed (possibly offline). If the repo was previously present, continuing with existing contents if any."
-    mkdir -p "${REPO_DIR}"
-  fi
-else
-  info "Updating VibeVoice repository (fetch/pull) ..."
-  if ! (git -C "${REPO_DIR}" fetch --depth 1 && git -C "${REPO_DIR}" pull --ff-only); then
-    warn "Update failed (possibly offline). Reusing existing repo at ${REPO_DIR}."
-  fi
-fi
-
-### Install the repo in editable mode (local venv)
-if [[ -f "${REPO_DIR}/pyproject.toml" || -f "${REPO_DIR}/setup.py" ]]; then
+### Install the package in editable mode (local venv)
+if [[ -f "${PROJECT_DIR}/pyproject.toml" || -f "${PROJECT_DIR}/setup.py" ]]; then
   info "Installing VibeVoice in editable mode ..."
-  (cd "${REPO_DIR}" && python -m pip install --no-input -e .) || warn "Editable install failed; continuing (some demos may still work if deps are already satisfied)."
+  (cd "${PROJECT_DIR}" && python -m pip install --no-input -e .) || warn "Editable install failed; continuing (some demos may still work if deps are already satisfied)."
 else
-  warn "Repo seems incomplete (no pyproject.toml/setup.py). Continuing anyway."
+  warn "Package seems incomplete (no pyproject.toml/setup.py). Continuing anyway."
 fi
 
 ### Resolve local model directory (no network / no HF)
@@ -486,7 +469,7 @@ except Exception as e:
     print(f"[WARN] bootstrap: could not patch transformers: {e}", file=sys.stderr)
 
 # Hand off to the original demo, preserving CLI args
-demo = os.path.join(os.path.dirname(__file__), 'VibeVoice', 'demo', 'gradio_demo.py')
+demo = os.path.join(os.path.dirname(__file__), 'demo', 'gradio_demo.py')
 sys.argv = [demo] + sys.argv[1:]
 runpy.run_path(demo, run_name='__main__')
 PY
@@ -509,9 +492,9 @@ ensure_port_free() {
 run_gradio_demo() {
   ensure_port_free "${PORT}"
   info "Launching Gradio demo on http://127.0.0.1:${PORT} ..."
-  local demo_script="${REPO_DIR}/demo/gradio_demo.py"
+  local demo_script="${PROJECT_DIR}/demo/gradio_demo.py"
   if [[ ! -f "${demo_script}" ]]; then
-    error "Gradio demo script not found at ${demo_script}. The repo layout may have changed."
+    error "Gradio demo script not found at ${demo_script}. The project layout may have changed."
     exit 1
   fi
   local -a cmd
@@ -537,21 +520,21 @@ run_gradio_demo() {
 run_cli_infer() {
   info "Running CLI-style inference example ..."
   local text_file=""
-  if [[ -f "${REPO_DIR}/demo/text_examples/1p_abs.txt" ]]; then
-    text_file="${REPO_DIR}/demo/text_examples/1p_abs.txt"
+  if [[ -f "${PROJECT_DIR}/demo/text_examples/1p_abs.txt" ]]; then
+    text_file="${PROJECT_DIR}/demo/text_examples/1p_abs.txt"
   else
     text_file="${PROJECT_DIR}/demo_text.txt"
     printf "This is a short sample for VibeVoice on macOS.\n" > "${text_file}"
     info "Created example text: ${text_file}"
   fi
 
-  # Try known candidate scripts in the repo; if none found, fall back to a lightweight local runner.
+  # Try known candidate scripts in the demo directory; if none found, fall back to a lightweight local runner.
   declare -a candidates=(
-    "${REPO_DIR}/demo/cli_infer.py"
-    "${REPO_DIR}/demo/cli_tts.py"
-    "${REPO_DIR}/demo/infer_cli.py"
-    "${REPO_DIR}/demo/tts_cli.py"
-    "${REPO_DIR}/examples/cli_infer.py"
+    "${PROJECT_DIR}/demo/cli_infer.py"
+    "${PROJECT_DIR}/demo/cli_tts.py"
+    "${PROJECT_DIR}/demo/infer_cli.py"
+    "${PROJECT_DIR}/demo/tts_cli.py"
+    "${PROJECT_DIR}/demo/inference_from_file.py"
   )
   local runner=""
   for c in "${candidates[@]}"; do
@@ -657,7 +640,6 @@ else
 
 ${BOLD}Setup complete.${RESET}
 Project dir: ${PROJECT_DIR}
-Repo:        ${REPO_DIR}
 Model path:  ${MODEL_PATH}
 Venv:        ${VENV_DIR}
 ffmpeg:      $(command -v ffmpeg || echo "${FFMPEG_DIR}/ffmpeg")
