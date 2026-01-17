@@ -189,6 +189,213 @@ bash vibevoice_mac_arm64.sh --allow-brew --demo
 
 ---
 
+## VibeVoice-7B parameter reference
+
+This section lists the knobs you can use with the local VibeVoice-7B model. "Config-only" means edit the model config file and reload; changing architecture fields can make the weights incompatible.
+
+## VibeVoice-specific generation args
+_Directly accepted by .generate_
+
+### cfg_scale
+Classifier-Free Guidance scale for speech diffusion. Higher values push speech closer to the conditioning text/voice but can reduce naturalness. Set with `model.generate(..., cfg_scale=3.0, ...)`. Settable at runtime.
+
+### return_speech
+If False, the generate call skips decoding audio and returns only token sequences. Set with `model.generate(..., return_speech=False, ...)`. Settable at runtime.
+
+### speech_tensors
+Optional speech input for voice cloning. Supply waveform tensors and matching masks; used to inject speech embeddings. Set with `model.generate(..., speech_tensors=..., speech_masks=..., speech_input_mask=...)`. Settable at runtime.
+
+### speech_masks
+Boolean mask for `speech_tensors` indicating valid frames/segments. Set with `model.generate(..., speech_masks=...)`. Settable at runtime.
+
+### speech_input_mask
+Boolean mask that marks positions in the text sequence to insert the speech embeddings. Set with `model.generate(..., speech_input_mask=...)`. Settable at runtime.
+
+### negative_prompt_ids
+Accepted by the method signature but currently unused in the implementation, so it has no effect. Not settable in practice without code changes.
+
+### negative_prompt_attention_mask
+Accepted by the method signature but currently unused in the implementation, so it has no effect. Not settable in practice without code changes.
+
+### audio_streamer
+Optional `AudioStreamer`/`AsyncAudioStreamer` instance for streaming chunks during generation. Set with `model.generate(..., audio_streamer=streamer, ...)`. Settable at runtime.
+
+### stop_check_fn
+Optional callable that returns True to stop generation early (used in the loop). Set with `model.generate(..., stop_check_fn=my_fn, ...)`. Settable at runtime.
+
+### max_length_times
+Caps generated length to `max_length_times * input_length` (in tokens). Set with `model.generate(..., max_length_times=6, ...)`. Settable at runtime.
+
+### verbose
+Enables progress prints from the generation loop. Set with `model.generate(..., verbose=True, ...)`. Settable at runtime.
+
+### refresh_negative
+Controls whether the negative prompt cache is refreshed when diffusion starts. Set with `model.generate(..., refresh_negative=False, ...)`. Settable at runtime.
+
+### parsed_scripts
+Accepted but unused; currently no effect. Not settable without code changes.
+
+### all_speakers_list
+Accepted but unused; currently no effect. Not settable without code changes.
+
+## Standard Transformers generation args
+_Supported via GenerationConfig/kwargs_
+
+### max_length
+Total sequence length cap (prompt + generated). Set via `model.generate(..., max_length=...)` or `GenerationConfig(max_length=...)`. Settable at runtime.
+
+### max_new_tokens
+Maximum number of new tokens to generate. Set via `model.generate(..., max_new_tokens=...)` or `GenerationConfig(max_new_tokens=...)`. Settable at runtime.
+
+### min_length
+Minimum total length before EOS is allowed. Set via `model.generate(..., min_length=...)` or `GenerationConfig(min_length=...)`. Settable at runtime.
+
+### do_sample
+Enable sampling (True) vs greedy/beam search. Set via `model.generate(..., do_sample=True)`. Settable at runtime.
+
+### temperature
+Sampling temperature; higher increases randomness. Requires `do_sample=True`. Set via `model.generate(..., temperature=...)`. Settable at runtime.
+
+### top_k
+Top-k sampling cutoff. Requires `do_sample=True`. Set via `model.generate(..., top_k=...)`. Settable at runtime.
+
+### top_p
+Nucleus sampling cutoff. Requires `do_sample=True`. Set via `model.generate(..., top_p=...)`. Settable at runtime.
+
+### num_beams
+Beam search width. Set via `model.generate(..., num_beams=...)`. Settable at runtime.
+
+### length_penalty
+Beam search length penalty. Set via `model.generate(..., length_penalty=...)`. Settable at runtime.
+
+### repetition_penalty
+Penalize repeated tokens. Set via `model.generate(..., repetition_penalty=...)`. Settable at runtime.
+
+### no_repeat_ngram_size
+Forbid repeated n-grams of this size. Set via `model.generate(..., no_repeat_ngram_size=...)`. Settable at runtime.
+
+### early_stopping
+Stop beam search when all beams are finished. Set via `model.generate(..., early_stopping=True)`. Settable at runtime.
+
+### eos_token_id
+Token ID that ends generation. Set via `model.generate(..., eos_token_id=...)` or `GenerationConfig(eos_token_id=...)`. Settable at runtime.
+
+### bos_token_id
+Token ID used as BOS. Set via `model.generate(..., bos_token_id=...)` or `GenerationConfig(bos_token_id=...)`. Settable at runtime.
+
+### pad_token_id
+Padding token ID. Set via `model.generate(..., pad_token_id=...)` or `GenerationConfig(pad_token_id=...)`. Settable at runtime.
+
+### logits_processor
+Custom `LogitsProcessorList` to modify token scores. Set via `model.generate(..., logits_processor=...)`. Settable at runtime.
+
+### stopping_criteria
+Custom `StoppingCriteriaList` to stop generation. Set via `model.generate(..., stopping_criteria=...)`. Settable at runtime.
+
+### prefix_allowed_tokens_fn
+Callable that restricts allowed tokens by prefix. Set via `model.generate(..., prefix_allowed_tokens_fn=...)`. Settable at runtime.
+
+## Diffusion/CFG-related settings
+_Model config and inference settings_
+
+### ddpm_num_inference_steps
+Number of diffusion steps at inference time. Set at runtime with `model.set_ddpm_inference_steps(n)` or by editing `~/vibevoice_mac/models/VibeVoice-7B/config.json` before load.
+
+### ddpm_batch_mul
+Diffusion micro-batch multiplier. Set at runtime with `model.model.diffusion_head.config.ddpm_batch_mul = n`.
+
+### ddpm_beta_schedule
+Schedule type for diffusion (for example, `cosine`). Config-only in `~/vibevoice_mac/models/VibeVoice-7B/config.json`; changing it without retraining is not supported.
+
+### ddpm_num_steps
+Total training diffusion steps. Config-only; changing it without retraining is not supported.
+
+### prediction_type
+Diffusion prediction type (for example, `v_prediction`). Config-only.
+
+### diffusion_type
+Diffusion family (for example, `ddpm`). Config-only.
+
+### head_layers
+Number of diffusion head layers. Config-only.
+
+### head_ffn_ratio
+FFN ratio in diffusion head. Config-only.
+
+### latent_size
+Diffusion latent size. Config-only.
+
+### hidden_size
+Diffusion head hidden size. Config-only.
+
+### rms_norm_eps
+RMSNorm epsilon in diffusion head. Config-only.
+
+### speech_vae_dim
+Speech VAE dimension for diffusion head. Config-only.
+
+## Tokenizer/processor input settings
+_VibeVoiceProcessor.__call__ inputs_
+
+### text
+Text or script input. Can be a string, list of strings, or a path to a `.txt`/`.json` file. Set with `processor(text=..., ...)`.
+
+### voice_samples
+Optional voice references (paths or numpy arrays). Set with `processor(text=..., voice_samples=...)`.
+
+### padding
+Enable padding; can be `True`, `False`, `longest`, or `max_length`. Set with `processor(..., padding=...)`.
+
+### truncation
+Enable truncation; can be `True`/`False` or a strategy. Set with `processor(..., truncation=...)`.
+
+### max_length
+Max token length for the processor output. Set with `processor(..., max_length=...)`.
+
+### return_tensors
+Framework for tensors (for example, `pt`). Set with `processor(..., return_tensors="pt")`.
+
+### return_attention_mask
+Include attention masks. Set with `processor(..., return_attention_mask=True)`.
+
+_Config-only processor settings (from `~/vibevoice_mac/models/VibeVoice-7B/preprocessor_config.json`)_
+
+### speech_tok_compress_ratio
+Tokenizer compression ratio used in speech processing. Config-only.
+
+### db_normalize
+Whether to normalize audio loudness. Config-only.
+
+### audio_processor.sampling_rate
+Target sampling rate for audio (24k default). Config-only.
+
+### audio_processor.normalize_audio
+Whether to normalize waveforms. Config-only.
+
+### audio_processor.target_dB_FS
+Target loudness for normalization. Config-only.
+
+### audio_processor.eps
+Epsilon for numerical stability in normalization. Config-only.
+
+### processor_class
+Processor class name. Config-only.
+
+### language_model_pretrained_name
+Base LLM name (Qwen2.5-7B). Config-only.
+
+## Model loading settings
+_Applies when calling from_pretrained_
+
+### torch_dtype
+Model dtype (`torch.float16` or `torch.bfloat16`). Set via `from_pretrained(..., torch_dtype=...)`.
+
+### device_map
+Device placement (`auto`, `cpu`, `mps`, or a dict). Set via `from_pretrained(..., device_map=...)`.
+
+### attn_implementation
+Attention backend (`flash_attention_2` or `sdpa`). Set via `from_pretrained(..., attn_implementation=...)`.
+
 ## Responsible use (risks & limitations)
 
 High-quality synthetic speech can be misused (impersonation, fraud, disinformation). Use responsibly and comply with all applicable laws and policies. Disclose AI-generated content where appropriate.
