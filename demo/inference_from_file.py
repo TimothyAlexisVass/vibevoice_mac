@@ -26,6 +26,9 @@ warnings.filterwarnings("ignore", message="Special tokens have been added in the
 from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalGenerationInference
 from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DEFAULT_MODEL_PATH = os.path.join(REPO_ROOT, "models", "VibeVoice-7B")
+
 
 # =========================
 # CUDA / Colab helpers
@@ -350,7 +353,7 @@ def concat_audio(pieces: List[torch.Tensor]) -> Optional[torch.Tensor]:
 # =========================
 def parse_args():
     parser = argparse.ArgumentParser(description="VibeVoice TXT → Audio (OOM-resistant)")
-    parser.add_argument("--model_path", type=str, default="microsoft/VibeVoice-1.5b")
+    parser.add_argument("--model_path", type=str, default=DEFAULT_MODEL_PATH)
     parser.add_argument("--txt_path", type=str, default="demo/text_examples/1p_abs.txt")
     parser.add_argument("--speaker_names", type=str, nargs="+", default=["Andrew"])
     parser.add_argument("--output_dir", type=str, default="./outputs")
@@ -391,6 +394,9 @@ def main():
 
     args = parse_args()
     # print_gpu_info()
+    if not os.path.isdir(args.model_path):
+        print(f"Error: model_path must be a local directory (Hugging Face downloads are disabled): {args.model_path}")
+        return
 
     # Voice mapper / utilities
     voice_mapper = VoiceMapper()
@@ -463,7 +469,7 @@ def main():
 
     # Processor
     # print(f"Loading processor from {args.model_path}")
-    processor = VibeVoiceProcessor.from_pretrained(args.model_path)
+    processor = VibeVoiceProcessor.from_pretrained(args.model_path, local_files_only=True)
 
     # Dtype
     if args.dtype == "fp16":
@@ -484,6 +490,7 @@ def main():
     try:
         model = VibeVoiceForConditionalGenerationInference.from_pretrained(
             args.model_path,
+            local_files_only=True,
             torch_dtype=chosen_dtype,
             device_map=device_map,
             attn_implementation=attn_impl,
@@ -492,6 +499,7 @@ def main():
         print(f"[WARN] Initial load failed ({type(e).__name__}): {e}\nFalling back to SDPA.")
         model = VibeVoiceForConditionalGenerationInference.from_pretrained(
             args.model_path,
+            local_files_only=True,
             torch_dtype=chosen_dtype,
             device_map=device_map,
             attn_implementation="sdpa",
@@ -528,6 +536,7 @@ def main():
                 print("[Backoff] Forcing SDPA attention for retry.")
                 model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                     args.model_path,
+                    local_files_only=True,
                     torch_dtype=chosen_dtype,
                     device_map=device_map,
                     attn_implementation="sdpa",
@@ -566,6 +575,7 @@ def main():
                     chosen_dtype = torch.float16
                     model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                         args.model_path,
+                        local_files_only=True,
                         torch_dtype=chosen_dtype,
                         device_map=device_map,
                         attn_implementation="sdpa",  # safest

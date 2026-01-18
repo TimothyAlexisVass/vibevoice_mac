@@ -47,16 +47,22 @@ class VibeVoiceDemo:
     def load_model(self):
         """Load the VibeVoice model and processor."""
         print(f"Loading processor & model from {self.model_path}")
+        if not os.path.isdir(self.model_path):
+            raise RuntimeError(
+                f"Local model directory required (Hugging Face downloads are disabled): {self.model_path}"
+            )
         
         # Load processor
         self.processor = VibeVoiceProcessor.from_pretrained(
             self.model_path,
+            local_files_only=True,
         )
         
         # Load model
         try:
             self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                 self.model_path,
+                local_files_only=True,
                 torch_dtype=torch.bfloat16,
                 device_map='cuda',
                 attn_implementation='flash_attention_2' # flash_attention_2 is recommended
@@ -67,6 +73,7 @@ class VibeVoiceDemo:
             print("Error loading the model. Trying to use SDPA. However, note that only flash_attention_2 has been fully tested, and using SDPA may result in lower audio quality.")
             self.model = VibeVoiceForConditionalGenerationInference.from_pretrained(
                 self.model_path,
+                local_files_only=True,
                 torch_dtype=torch.bfloat16,
                 device_map='cuda',
                 attn_implementation='sdpa'

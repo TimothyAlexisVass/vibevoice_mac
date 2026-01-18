@@ -29,7 +29,7 @@ No CUDA sudo or global install required!
 
 * macOS on **Apple Silicon** (`arm64`)
 * **Python 3.10+** available as `python3`
-* Internet for first run (pip, git, model download)
+* Internet for first run (pip, git)
 * GB of free disk for the VibeVoice models
 
 ---
@@ -46,42 +46,15 @@ cd vibevoice_mac
 # 2) Make the setup script executable
 chmod +x setup.sh
 
-# 3) (Recommended) Add your Hugging Face token once
-printf 'HF_TOKEN=hf_your_token_here\n' > ./.env
-
-# 4) Run the Gradio demo (default model; local UI on port 7860)
+# 3) Run the Gradio demo (default model; local UI on port 7860)
 bash vibevoice_mac_arm64.sh --demo
 
-# 5) Share the demo publicly (Gradio share URL)
+# 4) Share the demo publicly (Gradio share URL)
 bash vibevoice_mac_arm64.sh --demo --share
 
-# 6) Try a smaller model if the Large one is heavy
-bash vibevoice_mac_arm64.sh --model microsoft/VibeVoice-1.5B --demo
+# 5) Try a smaller local model if the large one is heavy
+bash vibevoice_mac_arm64.sh --model-path ./models/VibeVoice-1.5B --demo
 ```
-
----
-
-## Hugging Face token (for gated/private models)
-
-The script automatically picks a token from:
-
-1. Existing env (`HF_TOKEN`)
-2. `./.env` (e.g. `HF_TOKEN=hf_xxx`)
-3. `./.hf_token` (file containing only the token string)
-
-Examples:
-
-```bash
-# One-time setup (preferred)
-cat > ./.env <<'EOF'
-HF_TOKEN=hf_your_token_here
-EOF
-
-# Or pass inline per run
-HF_TOKEN=hf_your_token_here bash vibevoice_mac_arm64.sh --demo
-```
-
-> **Never commit your token.** It lives in `./.env` (gitignored by default).
 
 ---
 
@@ -90,14 +63,14 @@ HF_TOKEN=hf_your_token_here bash vibevoice_mac_arm64.sh --demo
 ### Launch Gradio demo
 
 ```bash
-# Default model: aoi-ot/VibeVoice-Large
+# Default model: ./models/VibeVoice-7B
 bash vibevoice_mac_arm64.sh --demo
 
 # Public sharing
 bash vibevoice_mac_arm64.sh --demo --share
 
-# Different model
-bash vibevoice_mac_arm64.sh --model microsoft/VibeVoice-1.5B --demo
+# Different local model
+bash vibevoice_mac_arm64.sh --model-path ./models/VibeVoice-1.5B --demo
 ```
 
 ### CLI-style inference
@@ -125,15 +98,9 @@ bash vibevoice_mac_arm64.sh --allow-brew --demo
 
 ---
 
-## Models (quick guide)
+## Models (local only)
 
-| Model               | Context | Generation | Link                                                                                                 |
-| ------------------- | ------: | ---------: | ---------------------------------------------------------------------------------------------------- |
-| **VibeVoice-1.5B**  |     64K |   \~90 min | [https://huggingface.co/microsoft/VibeVoice-1.5B](https://huggingface.co/microsoft/VibeVoice-1.5B)   |
-| **VibeVoice-Large** |     32K |   \~45 min | [https://huggingface.co/microsoft/VibeVoice-Large](https://huggingface.co/microsoft/VibeVoice-Large) |
-
-* Default in this script: `aoi-ot/VibeVoice-Large` (change via `--model ...`)
-* Some models are **gated/private** → you’ll need a valid **HF token**
+Place local model directories under `./models/` and select them with `--model-path` (or `--model`).
 
 ---
 
@@ -142,24 +109,20 @@ bash vibevoice_mac_arm64.sh --allow-brew --demo
 * Uses the project directory and creates:
 
   * `.venv/` (local Python virtualenv)
-  * `_cache/` (HF/Torch/Transformers caches)
-  * `models/` (downloaded model files)
-  * `tools/ffmpeg/ffmpeg` (portable binary if needed)
-  * `VibeVoice/` (upstream repo)
-  * `outputs/` (audio from CLI path)
-* Pins all HF caches inside the project folder (no global cache usage).
-* Verifies shard completeness from `model.safetensors.index.json` and **resumes** if any pieces are missing.
+* `_cache/` (Torch/Transformers caches)
+* `models/` (local model files)
+* `tools/ffmpeg/ffmpeg` (portable binary if needed)
+* `outputs/` (audio from CLI path)
+* Pins all caches inside the project folder (no global cache usage).
+* Verifies the model directory contains real `.safetensors` weights.
 * Bootstraps the demo to **force SDPA** and **avoid CUDA** on macOS.
 
 ---
 
 ## Troubleshooting
 
-* **401 / “Repository Not Found” / gated model**
-  Add a valid **HF token** (see token section above) and make sure the model grants your account access.
-
 * **Missing shard error (e.g., `model-00002-of-00010.safetensors`)**
-  Re-run the script; downloads resume and shards are re-verified. Also check you have enough free disk space.
+  Ensure the model directory contains all shards and that the files are fully present locally.
 
 * **“Torch not compiled with CUDA enabled”**
   Expected on macOS. The script never tries CUDA and forces SDPA/MPS/CPU.
@@ -174,7 +137,7 @@ bash vibevoice_mac_arm64.sh --allow-brew --demo
 
 ## Notes & tips
 
-* **Performance**: MPS is faster than CPU, but still slower than high-end NVIDIA GPUs. For smoother UX, try `--model microsoft/VibeVoice-1.5B`.
+* **Performance**: MPS is faster than CPU, but still slower than high-end NVIDIA GPUs. For smoother UX, try a smaller local model via `--model-path ./models/VibeVoice-1.5B`.
 * **Attention backend**: The demo code prefers FlashAttention on CUDA; this fork **forces SDPA** (safe on MPS/CPU). Audio quality may differ from CUDA+FA2 runs.
 
 ---

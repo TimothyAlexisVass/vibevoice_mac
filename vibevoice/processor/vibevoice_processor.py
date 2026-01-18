@@ -47,9 +47,7 @@ class VibeVoiceProcessor:
 
         Args:
             pretrained_model_name_or_path (`str` or `os.PathLike`):
-                This can be either:
-                - a string, the *model id* of a pretrained model
-                - a path to a *directory* containing processor config
+                Path to a local *directory* containing processor config.
 
         Returns:
             [`VibeVoiceProcessor`]: The processor object instantiated from pretrained model.
@@ -62,13 +60,28 @@ class VibeVoiceProcessor:
             VibeVoiceTextTokenizerFast
         )
         
+        model_dir = os.fspath(pretrained_model_name_or_path)
+        if not os.path.isdir(model_dir):
+            raise ValueError(
+                f"Local model directory required (Hugging Face downloads are disabled): {model_dir}"
+            )
+
+        def resolve_local_path(candidate: str) -> str:
+            if os.path.exists(candidate):
+                return candidate
+            if not os.path.isabs(candidate):
+                joined = os.path.join(model_dir, candidate)
+                if os.path.exists(joined):
+                    return joined
+            return candidate
+
         # Load processor configuration
-        config_path = os.path.join(pretrained_model_name_or_path, "preprocessor_config.json")
+        config_path = os.path.join(model_dir, "preprocessor_config.json")
         if os.path.exists(config_path):
             with open(config_path, 'r') as f:
                 config = json.load(f)
         else:
-            logger.warning(f"No preprocessor_config.json found at {pretrained_model_name_or_path}, using defaults")
+            logger.warning(f"No preprocessor_config.json found at {model_dir}, using defaults")
             config = {
                 "speech_tok_compress_ratio": 3200,
                 "db_normalize": True,
@@ -79,15 +92,31 @@ class VibeVoiceProcessor:
         db_normalize = config.get("db_normalize", True)
         
         # Load tokenizer - try from model path first, then fallback to Qwen        
-        language_model_pretrained_name = config.get("language_model_pretrained_name", None) or kwargs.pop("language_model_pretrained_name", "Qwen/Qwen2.5-1.5B")
-        logger.info(f"Loading tokenizer from {language_model_pretrained_name}")
-        if 'qwen' in language_model_pretrained_name.lower():
+        raw_language_model_name = (
+            config.get("language_model_pretrained_name", None)
+            or kwargs.pop("language_model_pretrained_name", None)
+            or model_dir
+        )
+        language_model_pretrained_name = resolve_local_path(raw_language_model_name)
+        logger.info(f"Loading tokenizer from: {language_model_pretrained_name}")
+        tokenizer_hint = str(raw_language_model_name).lower()
+        if "qwen" not in tokenizer_hint and raw_language_model_name != model_dir:
+            raise ValueError(
+                f"Unsupported tokenizer type for {raw_language_model_name}. Supported types: Qwen, Llama, Gemma."
+            )
+
+        kwargs.pop("local_files_only", None)
+        try:
             tokenizer = VibeVoiceTextTokenizerFast.from_pretrained(
                 language_model_pretrained_name,
+                local_files_only=True,
                 **kwargs
             )
-        else:
-            raise ValueError(f"Unsupported tokenizer type for {language_model_pretrained_name}. Supported types: Qwen, Llama, Gemma.")
+        except Exception as e:
+            raise ValueError(
+                "Tokenizer files were not found locally. Hugging Face downloads are disabled; "
+                "provide a local tokenizer path or pre-populate the cache."
+            ) from e
         
         # Load audio processor
         if "audio_processor" in config:

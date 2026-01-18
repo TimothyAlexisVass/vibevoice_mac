@@ -53,7 +53,7 @@ success(){ printf "%b[DONE]%b %s\n" "$GREEN" "$RESET" "$*"; }
 on_error() {
   error "An unexpected error occurred. See messages above."
   warn  "Common fixes:
-  - Ensure stable internet for first run (pip, git, model download).
+  - Ensure stable internet for first run (pip, git).
   - Check Python >= 3.10: run 'python3 --version'.
   - If MPS unavailable, the script will fall back to CPU (slower).
   - If SSL/cert errors occur, try: 'export PIP_DISABLE_PIP_VERSION_CHECK=1' and re-run, or ensure your macOS certificates are up to date.
@@ -193,7 +193,7 @@ if command -v df >/dev/null 2>&1; then
     FREE_GB="$(awk "BEGIN {printf \"%.1f\", ${FREE_KB}/1024/1024}")"
     info "Approx free space at project volume: ${FREE_GB} GB"
     if awk "BEGIN {exit !(${FREE_KB} < 5242880)}"; then  # < 5 GB
-      warn "Low disk space (<5GB). Model downloads may fail."
+      warn "Low disk space (<5GB). Large local model files may fail to load."
     fi
   fi
 fi
@@ -221,7 +221,6 @@ pkgs = [
     "torch",                       # macOS wheels include MPS
     "transformers",
     "accelerate",
-    "huggingface_hub[cli]",
     "soundfile",
     "numpy",
     "scipy",
@@ -389,7 +388,7 @@ PY
       ;;
     3)
       error "Local model path is empty: ${input}"
-      warn "Ensure the model files are fully downloaded."
+      warn "Ensure the model files are present locally."
       exit 1
       ;;
     4)
@@ -585,8 +584,12 @@ except Exception as e:
 try:
     from transformers import AutoProcessor, AutoModel
     import torch, numpy as np
-    processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-    model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(
+        model_path, trust_remote_code=True, local_files_only=True
+    )
+    model = AutoModel.from_pretrained(
+        model_path, trust_remote_code=True, local_files_only=True
+    )
     prompt = text
     # Many TTS repos expose generate or inference methods with remote code
     if hasattr(model, "generate"):
@@ -647,7 +650,7 @@ ffmpeg:      $(command -v ffmpeg || echo "${FFMPEG_DIR}/ffmpeg")
 Next steps:
   - Launch Gradio demo:    ${BOLD}bash "$0" --demo${RESET}
   - Run CLI inference:     ${BOLD}bash "$0" --infer${RESET}
-  - Choose a model:        ${BOLD}bash "$0" --model microsoft/VibeVoice-1.5B --demo${RESET}
+  - Choose a model:        ${BOLD}bash "$0" --model-path ./models/VibeVoice-1.5B --demo${RESET}
   - Clean everything:      ${BOLD}bash "$0" --clean --force${RESET}
 
 EOF
