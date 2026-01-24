@@ -7,7 +7,7 @@ VENV_PY = os.path.join(ROOT, ".venv", "bin", "python")
 INFER = os.path.join(ROOT, "demo", "inference_from_file.py")
 OUTDIR = os.path.join(ROOT, "outputs")
 TMPDIR = "/tmp/vibevoice_chunks"
-VOICE = "MariaMolina"
+VOICE = "freezer_voice"
 
 MAX_CHARS = 400
 PREFIX = "Speaker 1: "

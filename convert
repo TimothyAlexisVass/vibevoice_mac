@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --input) INPUT="$2"; shift 2 ;;
+    --output_name) OUTPUT_NAME="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+if [[ -z "$INPUT" ]]; then
+  read -r -p "Please select input file (video or audio): " INPUT
+fi
+
+INPUT="${INPUT/#\~/$HOME}"
+
+BASENAME="$(basename "$INPUT")"
+DEFAULT_OUTPUT="${BASENAME%.*}.wav"
+
+if [[ -z "$OUTPUT_NAME" ]]; then
+  read -r -p "Please select output file name (default $DEFAULT_OUTPUT): " OUTPUT_NAME
+fi
+
+OUTPUT_NAME="${OUTPUT_NAME:-$DEFAULT_OUTPUT}"
+
+if [[ "$OUTPUT_NAME" != *.wav ]]; then
+  OUTPUT_NAME="$OUTPUT_NAME.wav"
+fi
+
+mkdir -p ./demo/voices
+
+ffmpeg -i "$INPUT" -vn -ac 1 -ar 24000 -c:a pcm_s16le "./demo/voices/$OUTPUT_NAME"
+
